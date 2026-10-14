@@ -1,0 +1,4 @@
+- Never install npm packages not explicitly listed in `SPEC.md` without asking in the Implementation Plan.
+- Never modify `/frontend` and `/backend` in the same task unless explicitly instructed.
+- Always generate a Task Plan and Implementation Plan artifact before writing code.
+- Use native `fetch` on the frontend and raw parameterized `pg` Pool queries on the backend (no Prisma, Sequelize, or TypeScript).
