@@ -17,6 +17,13 @@ pool.on('error', (err) => {
   console.error('Unexpected error on idle pg client', err);
 });
 
+// Verify DB connection at startup
+pool.query('SELECT 1').then(() => {
+  console.log('Database connected successfully');
+}).catch((err) => {
+  console.error('FATAL: Cannot connect to database. Check DATABASE_URL env var:', err.message || err);
+});
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -132,7 +139,7 @@ cron.schedule('* * * * *', async () => {
       await Promise.all(dueMonitors.map(checkMonitor));
     }
   } catch (err) {
-    console.error('Error running scheduled health check cron:', err.message);
+    console.error('Error running scheduled health check cron:', err.message || err);
   }
 });
 
