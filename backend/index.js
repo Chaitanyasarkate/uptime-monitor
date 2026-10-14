@@ -22,7 +22,7 @@ app.use(cors());
 app.use(express.json());
 
 // Send Discord Webhook Alert
-async function sendDiscordAlert(url, newStatus, statusCode, errorMsg) {
+async function sendDiscordAlert(url, newStatus, statusCode, errorMsg, isColdStart = false) {
   const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
   if (!webhookUrl || !webhookUrl.trim()) {
     return;
@@ -37,6 +37,10 @@ async function sendDiscordAlert(url, newStatus, statusCode, errorMsg) {
     { name: 'Status', value: newStatus, inline: true },
     { name: 'Status Code', value: statusCode ? String(statusCode) : 'N/A', inline: true },
   ];
+
+  if (isColdStart) {
+    fields.push({ name: 'Cold Start', value: '❄️ Boot latency > 3000ms', inline: true });
+  }
 
   if (errorMsg) {
     fields.push({ name: 'Error Details', value: String(errorMsg), inline: false });
@@ -65,8 +69,9 @@ async function checkMonitor(monitor) {
   let errorMsg = null;
 
   try {
+    // 45,000ms timeout to handle slow cold starts on free hosting providers (e.g. Render)
     const response = await axios.get(monitor.url, {
-      timeout: 8000,
+      timeout: 45000,
       validateStatus: () => true,
     });
 
@@ -87,10 +92,12 @@ async function checkMonitor(monitor) {
   }
 
   const responseTimeMs = Date.now() - startTime;
+  // If responseTimeMs > 3000, mark cold start
+  const isColdStart = responseTimeMs > 3000;
 
-  // CRITICAL ANTI-SPAM RULE: Trigger ONLY on transitions (not initial PENDING)
+  // CRITICAL ANTI-SPAM RULE: Trigger ONLY on state transitions (not initial PENDING)
   if (monitor.status !== 'PENDING' && monitor.status !== newStatus) {
-    await sendDiscordAlert(monitor.url, newStatus, statusCode, errorMsg);
+    await sendDiscordAlert(monitor.url, newStatus, statusCode, errorMsg, isColdStart);
   }
 
   try {
@@ -100,11 +107,11 @@ async function checkMonitor(monitor) {
       [newStatus, monitor.id]
     );
 
-    // Insert ping log
+    // Insert ping log with cold start tracking
     await pool.query(
-      `INSERT INTO ping_logs (monitor_id, status_code, response_time_ms, is_up) 
-       VALUES ($1, $2, $3, $4)`,
-      [monitor.id, statusCode, responseTimeMs, isUp]
+      `INSERT INTO ping_logs (monitor_id, status_code, response_time_ms, is_up, is_cold_start) 
+       VALUES ($1, $2, $3, $4, $5)`,
+      [monitor.id, statusCode, responseTimeMs, isUp, isColdStart]
     );
   } catch (dbErr) {
     console.error(`Database error during health check for monitor ${monitor.id}:`, dbErr.message);
@@ -112,12 +119,17 @@ async function checkMonitor(monitor) {
 }
 
 // Schedule node-cron task running every 60 seconds (* * * * *)
+// Only pings monitors if last_checked IS NULL or elapsed minutes >= interval_minutes
 cron.schedule('* * * * *', async () => {
   try {
-    const res = await pool.query('SELECT id, url, status FROM monitors');
-    const monitors = res.rows;
-    if (monitors.length > 0) {
-      await Promise.all(monitors.map(checkMonitor));
+    const res = await pool.query(
+      `SELECT * FROM monitors
+       WHERE last_checked IS NULL 
+          OR last_checked <= NOW() - (COALESCE(interval_minutes, 1) || ' minutes')::INTERVAL`
+    );
+    const dueMonitors = res.rows;
+    if (dueMonitors.length > 0) {
+      await Promise.all(dueMonitors.map(checkMonitor));
     }
   } catch (err) {
     console.error('Error running scheduled health check cron:', err.message);
@@ -133,7 +145,7 @@ app.get(['/api/health', '/api/Health'], (req, res) => {
 app.get('/api/monitors', async (req, res) => {
   try {
     const monitorsResult = await pool.query(
-      'SELECT id, url, status, last_checked, created_at FROM monitors ORDER BY id DESC'
+      'SELECT id, url, status, interval_minutes, is_keep_alive, last_checked, created_at FROM monitors ORDER BY id DESC'
     );
     const monitors = monitorsResult.rows;
 
@@ -142,7 +154,7 @@ app.get('/api/monitors', async (req, res) => {
     }
 
     const logsResult = await pool.query(
-      `SELECT id, monitor_id, status_code, response_time_ms, is_up, checked_at 
+      `SELECT id, monitor_id, status_code, response_time_ms, is_up, is_cold_start, checked_at 
        FROM ping_logs 
        WHERE checked_at > NOW() - INTERVAL '24 hours' 
        ORDER BY checked_at ASC`
@@ -168,10 +180,10 @@ app.get('/api/monitors', async (req, res) => {
   }
 });
 
-// POST /api/monitors - Add new monitor and run immediate initial check
+// POST /api/monitors - Add new monitor with optional interval_minutes (1, 5, 10, 14)
 app.post('/api/monitors', async (req, res) => {
   try {
-    let { url } = req.body;
+    let { url, interval_minutes } = req.body;
 
     if (!url || typeof url !== 'string' || !url.trim()) {
       return res.status(400).json({ error: 'URL is required' });
@@ -191,9 +203,23 @@ app.post('/api/monitors', async (req, res) => {
       return res.status(400).json({ error: 'Invalid URL format' });
     }
 
+    // Interval validation (default 1, allowed: 1, 5, 10, 14)
+    let parsedInterval = 1;
+    if (interval_minutes !== undefined && interval_minutes !== null) {
+      parsedInterval = parseInt(interval_minutes, 10);
+      const allowedIntervals = [1, 5, 10, 14];
+      if (!allowedIntervals.includes(parsedInterval)) {
+        return res.status(400).json({
+          error: 'Invalid interval_minutes. Allowed values: 1, 5, 10, 14',
+        });
+      }
+    }
+
     const result = await pool.query(
-      'INSERT INTO monitors (url) VALUES ($1) RETURNING *',
-      [url]
+      `INSERT INTO monitors (url, interval_minutes, is_keep_alive) 
+       VALUES ($1, $2, true) 
+       RETURNING *`,
+      [url, parsedInterval]
     );
 
     const createdMonitor = result.rows[0];
@@ -210,6 +236,48 @@ app.post('/api/monitors', async (req, res) => {
     }
     console.error('Error creating monitor:', err);
     res.status(500).json({ error: 'Internal server error creating monitor' });
+  }
+});
+
+// POST /api/monitors/:id/wake - Immediate manual wake-up ping
+app.post('/api/monitors/:id/wake', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const monitorId = parseInt(id, 10);
+
+    if (isNaN(monitorId)) {
+      return res.status(400).json({ error: 'Invalid monitor ID' });
+    }
+
+    const result = await pool.query('SELECT * FROM monitors WHERE id = $1', [monitorId]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Monitor not found' });
+    }
+
+    const monitor = result.rows[0];
+
+    // Force an immediate health check
+    await checkMonitor(monitor);
+
+    // Fetch the updated monitor and its history
+    const updatedMonitorResult = await pool.query('SELECT * FROM monitors WHERE id = $1', [monitorId]);
+    const logsResult = await pool.query(
+      `SELECT id, monitor_id, status_code, response_time_ms, is_up, is_cold_start, checked_at 
+       FROM ping_logs 
+       WHERE monitor_id = $1 AND checked_at > NOW() - INTERVAL '24 hours' 
+       ORDER BY checked_at ASC`,
+      [monitorId]
+    );
+
+    const payload = {
+      ...updatedMonitorResult.rows[0],
+      history: logsResult.rows,
+    };
+
+    res.status(200).json(payload);
+  } catch (err) {
+    console.error('Error triggering wake ping:', err);
+    res.status(500).json({ error: 'Internal server error triggering wake ping' });
   }
 });
 

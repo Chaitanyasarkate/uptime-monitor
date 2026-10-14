@@ -41,6 +41,8 @@ The project is structured as a monorepo consisting of:
 - `id`: `SERIAL PRIMARY KEY`
 - `url`: `TEXT UNIQUE NOT NULL`
 - `status`: `VARCHAR(10) DEFAULT 'PENDING'`
+- `interval_minutes`: `INTEGER DEFAULT 1` (allowed values: `1`, `5`, `10`, `14`)
+- `is_keep_alive`: `BOOLEAN DEFAULT true`
 - `last_checked`: `TIMESTAMP`
 - `created_at`: `TIMESTAMP DEFAULT CURRENT_TIMESTAMP`
 
@@ -50,6 +52,7 @@ The project is structured as a monorepo consisting of:
 - `status_code`: `INTEGER`
 - `response_time_ms`: `INTEGER`
 - `is_up`: `BOOLEAN`
+- `is_cold_start`: `BOOLEAN DEFAULT false` (set to `true` if `response_time_ms > 3000`)
 - `checked_at`: `TIMESTAMP DEFAULT CURRENT_TIMESTAMP`
 
 ---
@@ -67,6 +70,8 @@ All backend endpoints are served on port `4000` under `/api`. Database queries m
       "id": 1,
       "url": "https://example.com",
       "status": "UP",
+      "interval_minutes": 14,
+      "is_keep_alive": true,
       "last_checked": "2026-10-14T12:00:00.000Z",
       "created_at": "2026-10-14T10:00:00.000Z",
       "history": [
@@ -76,6 +81,7 @@ All backend endpoints are served on port `4000` under `/api`. Database queries m
           "status_code": 200,
           "response_time_ms": 145,
           "is_up": true,
+          "is_cold_start": false,
           "checked_at": "2026-10-14T12:00:00.000Z"
         }
       ]
@@ -84,14 +90,19 @@ All backend endpoints are served on port `4000` under `/api`. Database queries m
   ```
 
 ### `POST /api/monitors`
-- **Description**: Adds a new monitor URL. Auto-prepends `https://` if missing prior to inserting into the database.
+- **Description**: Adds a new monitor URL. Auto-prepends `https://` if missing prior to inserting into the database. Accepts optional `interval_minutes` (`1`, `5`, `10`, `14`).
 - **Request Body**:
   ```json
   {
-    "url": "example.com"
+    "url": "example.com",
+    "interval_minutes": 14
   }
   ```
 - **Response**: The newly created monitor record.
+
+### `POST /api/monitors/:id/wake`
+- **Description**: Triggers an immediate manual health check / wake-up ping for the monitor, updating status and ping logs.
+- **Response**: The updated monitor record with its latest history.
 
 ### `DELETE /api/monitors/:id`
 - **Description**: Deletes a monitor by ID (cascades to related `ping_logs`).

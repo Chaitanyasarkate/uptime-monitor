@@ -4,6 +4,8 @@ CREATE TABLE IF NOT EXISTS monitors (
   id SERIAL PRIMARY KEY,
   url TEXT UNIQUE NOT NULL,
   status VARCHAR(10) DEFAULT 'PENDING',
+  interval_minutes INTEGER DEFAULT 1,
+  is_keep_alive BOOLEAN DEFAULT true,
   last_checked TIMESTAMP,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -14,6 +16,7 @@ CREATE TABLE IF NOT EXISTS ping_logs (
   status_code INTEGER,
   response_time_ms INTEGER,
   is_up BOOLEAN,
+  is_cold_start BOOLEAN DEFAULT false,
   checked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

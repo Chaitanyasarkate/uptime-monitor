@@ -12,6 +12,7 @@ import {
   Zap,
   RefreshCw,
   Loader2,
+  Flame,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -45,6 +46,11 @@ const CustomTooltip = ({ active, payload }) => {
           <span className="font-semibold text-emerald-400">
             {data.response_time_ms > 0 ? `${data.response_time_ms} ms` : 'No response'}
           </span>
+          {data.is_cold_start && (
+            <span className="text-[10px] px-1.5 py-0.2 rounded bg-sky-950 text-sky-400 border border-sky-800">
+              Cold Start
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-slate-300">Status Code:</span>
@@ -67,8 +73,10 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [newUrl, setNewUrl] = useState('');
+  const [intervalMinutes, setIntervalMinutes] = useState('1');
   const [inputError, setInputError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [wakingId, setWakingId] = useState(null);
 
   // Fetch monitors from REST API
   const fetchMonitors = useCallback(async (isManual = false) => {
@@ -113,7 +121,10 @@ export default function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ url: trimmed }),
+        body: JSON.stringify({
+          url: trimmed,
+          interval_minutes: parseInt(intervalMinutes, 10),
+        }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -126,6 +137,7 @@ export default function App() {
 
       setNewUrl('');
       setInputError('');
+      setIntervalMinutes('1');
       // Refresh list immediately
       await fetchMonitors();
     } catch (err) {
@@ -136,20 +148,34 @@ export default function App() {
     }
   };
 
+  // Handle Manual Wake Now
+  const handleWakeMonitor = async (id) => {
+    setWakingId(id);
+    try {
+      const res = await fetch(`${API_URL}/${id}/wake`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        console.error('Wake ping failed with status:', res.status);
+      }
+      await fetchMonitors();
+    } catch (err) {
+      console.error('Error triggering wake ping:', err);
+    } finally {
+      setWakingId(null);
+    }
+  };
+
   // Handle Delete Monitor
   const handleDeleteMonitor = async (id) => {
     try {
-      // Optimistic update for immediate feedback
       setMonitors((prev) => prev.filter((m) => m.id !== id));
-
       const res = await fetch(`${API_URL}/${id}`, {
         method: 'DELETE',
       });
-
       if (!res.ok && res.status !== 204) {
         console.error('Delete request returned status:', res.status);
       }
-
       await fetchMonitors();
     } catch (err) {
       console.error('Error deleting monitor:', err);
@@ -195,9 +221,14 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-                PulseGuard <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-400 border border-indigo-800/60 font-medium">Uptime Monitor</span>
+                PulseGuard{' '}
+                <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-400 border border-indigo-800/60 font-medium">
+                  Uptime Monitor
+                </span>
               </h1>
-              <p className="text-xs text-slate-400">Live operational status and 24-hour latency tracking</p>
+              <p className="text-xs text-slate-400">
+                Keep-Alive engine, cold-start tolerance & 24h latency tracking
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -207,7 +238,9 @@ export default function App() {
               className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 px-3 py-1.5 rounded-full transition-all focus:outline-none"
               title="Refresh monitors"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-indigo-400' : ''}`} />
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-indigo-400' : ''}`}
+              />
               <span>Refresh</span>
             </button>
             <div className="flex items-center gap-2 text-xs text-slate-400 bg-slate-900/80 border border-slate-800 px-3.5 py-1.5 rounded-full w-fit">
@@ -215,7 +248,7 @@ export default function App() {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
               </span>
-              <span>Polling every 15s</span>
+              <span>Live polling</span>
             </div>
           </div>
         </header>
@@ -225,7 +258,9 @@ export default function App() {
           {/* Total Monitors */}
           <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 shadow-lg backdrop-blur-sm flex items-center justify-between transition-all duration-200 hover:border-slate-700">
             <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Total Monitors</p>
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+                Total Monitors
+              </p>
               <h2 className="text-3xl font-bold text-white mt-1">{totalCount}</h2>
             </div>
             <div className="w-12 h-12 rounded-xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-center text-slate-300">
@@ -236,7 +271,9 @@ export default function App() {
           {/* Operational UP */}
           <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 shadow-lg backdrop-blur-sm flex items-center justify-between transition-all duration-200 hover:border-emerald-500/30">
             <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-emerald-400">Operational</p>
+              <p className="text-xs font-medium uppercase tracking-wider text-emerald-400">
+                Operational
+              </p>
               <h2 className="text-3xl font-bold text-emerald-400 mt-1">{upCount}</h2>
             </div>
             <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
@@ -247,7 +284,9 @@ export default function App() {
           {/* Down */}
           <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 shadow-lg backdrop-blur-sm flex items-center justify-between transition-all duration-200 hover:border-rose-500/30">
             <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-rose-400">Downtime</p>
+              <p className="text-xs font-medium uppercase tracking-wider text-rose-400">
+                Downtime
+              </p>
               <h2 className="text-3xl font-bold text-rose-400 mt-1">{downCount}</h2>
             </div>
             <div className="w-12 h-12 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
@@ -256,13 +295,15 @@ export default function App() {
           </div>
         </section>
 
-        {/* Add Monitor Form */}
+        {/* Add Monitor Form with Keep-Alive Interval Dropdown */}
         <section className="bg-slate-900/70 border border-slate-800/80 rounded-2xl p-5 sm:p-6 shadow-xl backdrop-blur-md">
           <div className="mb-4">
             <h3 className="text-base font-semibold text-white flex items-center gap-2">
               <Plus className="w-4 h-4 text-indigo-400" /> Add New Service
             </h3>
-            <p className="text-xs text-slate-400 mt-0.5">Enter a URL to monitor availability and latency.</p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Enter a URL and select a keep-alive frequency to prevent free cloud instances from spinning down.
+            </p>
           </div>
           <form onSubmit={handleAddMonitor} className="flex flex-col sm:flex-row gap-3">
             <div className="flex-1 relative">
@@ -274,7 +315,7 @@ export default function App() {
                   setNewUrl(e.target.value);
                   if (inputError) setInputError('');
                 }}
-                placeholder="example.com or https://api.myservice.io"
+                placeholder="example.com or https://myservice.onrender.com"
                 className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all disabled:opacity-50"
               />
               {inputError && (
@@ -284,6 +325,21 @@ export default function App() {
                 </p>
               )}
             </div>
+
+            {/* Interval Dropdown Selector */}
+            <div className="sm:w-64">
+              <select
+                value={intervalMinutes}
+                disabled={isSubmitting}
+                onChange={(e) => setIntervalMinutes(e.target.value)}
+                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all cursor-pointer"
+              >
+                <option value="1">Every 1 min</option>
+                <option value="5">Every 5 mins</option>
+                <option value="14">Every 14 mins (Render Keep-Alive)</option>
+              </select>
+            </div>
+
             <button
               type="submit"
               disabled={isSubmitting}
@@ -316,7 +372,9 @@ export default function App() {
             <div className="bg-slate-900/40 border border-slate-800/60 rounded-2xl p-12 text-center">
               <Radio className="w-12 h-12 text-slate-600 mx-auto mb-3 stroke-[1.5]" />
               <p className="text-slate-300 font-medium">No monitors configured</p>
-              <p className="text-xs text-slate-500 mt-1">Add a URL above to start tracking availability.</p>
+              <p className="text-xs text-slate-500 mt-1">
+                Add a URL above to start keep-alive tracking.
+              </p>
             </div>
           ) : (
             monitors.map((monitor) => {
@@ -326,6 +384,11 @@ export default function App() {
               const avgLatency = calculateAvgResponseTime(history);
               const latestLog = history[history.length - 1];
 
+              // Check if any check was a cold start (>3000ms or is_cold_start)
+              const hasColdStart = history.some(
+                (h) => h.is_cold_start || (h.response_time_ms && h.response_time_ms > 3000)
+              );
+
               return (
                 <div
                   key={monitor.id}
@@ -333,7 +396,7 @@ export default function App() {
                 >
                   {/* Top Bar inside Monitor Card */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800/60">
-                    <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-2.5 flex-wrap">
                       {/* Status Badge */}
                       <span
                         className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold tracking-wide border ${
@@ -356,6 +419,21 @@ export default function App() {
                         {monitor.status || 'PENDING'}
                       </span>
 
+                      {/* Cold Start Badge */}
+                      {hasColdStart && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/30 shadow-sm shadow-sky-500/10">
+                          ❄️ Cold Start Detected
+                        </span>
+                      )}
+
+                      {/* Keep Alive Interval Badge */}
+                      <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-slate-800/80 text-slate-300 border border-slate-700/60 font-medium flex items-center gap-1">
+                        <Flame className="w-3 h-3 text-amber-400" />
+                        {monitor.interval_minutes === 14
+                          ? '14m Keep-Alive'
+                          : `Every ${monitor.interval_minutes || 1}m`}
+                      </span>
+
                       {/* Clickable URL */}
                       <a
                         href={monitor.url}
@@ -368,7 +446,7 @@ export default function App() {
                       </a>
                     </div>
 
-                    <div className="flex items-center gap-4 self-end sm:self-center">
+                    <div className="flex items-center gap-3 self-end sm:self-center">
                       <div className="text-right">
                         <span className="text-[11px] uppercase tracking-wider text-slate-500 block">
                           Last Checked
@@ -379,10 +457,25 @@ export default function App() {
                         </span>
                       </div>
 
+                      {/* ⚡ Wake Now Button */}
+                      <button
+                        onClick={() => handleWakeMonitor(monitor.id)}
+                        disabled={wakingId === monitor.id}
+                        className="inline-flex items-center gap-1 bg-amber-500/10 hover:bg-amber-500/20 active:bg-amber-500/30 text-amber-300 border border-amber-500/30 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all focus:outline-none disabled:opacity-50"
+                        title="Force immediate wake-up ping"
+                      >
+                        {wakingId === monitor.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                        ) : (
+                          <Zap className="w-3.5 h-3.5 text-amber-400" />
+                        )}
+                        <span>{wakingId === monitor.id ? 'Waking...' : '⚡ Wake Now'}</span>
+                      </button>
+
                       {/* Delete Button */}
                       <button
                         onClick={() => handleDeleteMonitor(monitor.id)}
-                        className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors border border-transparent hover:border-rose-500/20"
+                        className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors border border-transparent hover:border-rose-500/20"
                         title="Delete Monitor"
                         aria-label="Delete Monitor"
                       >
@@ -394,7 +487,9 @@ export default function App() {
                   {/* Middle Metrics & Latency Summary */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 py-4">
                     <div className="bg-slate-950/50 rounded-xl p-3 border border-slate-800/50">
-                      <span className="text-[11px] uppercase tracking-wider text-slate-400 block">Avg Response</span>
+                      <span className="text-[11px] uppercase tracking-wider text-slate-400 block">
+                        Avg Response
+                      </span>
                       <span className="text-lg font-bold text-slate-100 mt-0.5 flex items-center gap-1">
                         <Zap className="w-4 h-4 text-amber-400" />
                         {avgLatency !== null ? `${avgLatency} ms` : 'N/A'}
@@ -402,7 +497,9 @@ export default function App() {
                     </div>
 
                     <div className="bg-slate-950/50 rounded-xl p-3 border border-slate-800/50">
-                      <span className="text-[11px] uppercase tracking-wider text-slate-400 block">Availability</span>
+                      <span className="text-[11px] uppercase tracking-wider text-slate-400 block">
+                        Availability
+                      </span>
                       <span
                         className={`text-lg font-bold mt-0.5 ${
                           isPending
@@ -417,14 +514,18 @@ export default function App() {
                     </div>
 
                     <div className="bg-slate-950/50 rounded-xl p-3 border border-slate-800/50">
-                      <span className="text-[11px] uppercase tracking-wider text-slate-400 block">Checks Recorded</span>
+                      <span className="text-[11px] uppercase tracking-wider text-slate-400 block">
+                        Checks Recorded
+                      </span>
                       <span className="text-lg font-bold text-slate-100 mt-0.5">
                         {history.length}
                       </span>
                     </div>
 
                     <div className="bg-slate-950/50 rounded-xl p-3 border border-slate-800/50">
-                      <span className="text-[11px] uppercase tracking-wider text-slate-400 block">Current Latency</span>
+                      <span className="text-[11px] uppercase tracking-wider text-slate-400 block">
+                        Latest Latency
+                      </span>
                       <span className="text-lg font-bold text-slate-100 mt-0.5">
                         {latestLog && latestLog.response_time_ms > 0
                           ? `${latestLog.response_time_ms} ms`
