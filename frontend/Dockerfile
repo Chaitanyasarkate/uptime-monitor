@@ -2,11 +2,15 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
+# Copy files from build context
+COPY . .
+
+# If context was repository root, move frontend files into /app
+RUN if [ -f "frontend/package.json" ]; then \
+      cp -rf frontend/* . && rm -rf backend frontend db; \
+    fi
 
 RUN npm install
-
-COPY . .
 
 EXPOSE 5173
 
