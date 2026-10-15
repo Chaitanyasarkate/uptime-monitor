@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const { Pool } = require('pg');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -27,6 +28,10 @@ pool.query('SELECT 1').then(() => {
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Serve built React frontend from /app/public (production only)
+const publicDir = path.join(__dirname, 'public');
+app.use(express.static(publicDir));
 
 // Send Discord Webhook Alert
 async function sendDiscordAlert(url, newStatus, statusCode, errorMsg, isColdStart = false) {
@@ -141,18 +146,6 @@ cron.schedule('* * * * *', async () => {
   } catch (err) {
     console.error('Error running scheduled health check cron:', err.message || err);
   }
-});
-
-// Root route
-app.get('/', (req, res) => {
-  res.status(200).json({
-    name: 'Uptime Monitor API',
-    status: 'running',
-    endpoints: {
-      health: '/api/health',
-      monitors: '/api/monitors',
-    },
-  });
 });
 
 // Health Check Endpoint
@@ -316,6 +309,17 @@ app.delete('/api/monitors/:id', async (req, res) => {
     console.error('Error deleting monitor:', err);
     res.status(500).json({ error: 'Internal server error deleting monitor' });
   }
+});
+
+// SPA fallback — serve index.html for any non-API route (React Router support)
+app.get('*', (req, res) => {
+  const indexFile = path.join(__dirname, 'public', 'index.html');
+  res.sendFile(indexFile, (err) => {
+    if (err) {
+      // If no public/index.html (local dev without build), return API info
+      res.status(200).json({ name: 'Uptime Monitor API', status: 'running' });
+    }
+  });
 });
 
 app.listen(PORT, () => {

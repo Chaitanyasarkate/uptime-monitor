@@ -24,7 +24,7 @@ import {
   CartesianGrid,
 } from 'recharts';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api/monitors';
+const API_URL = import.meta.env.VITE_API_URL || '/api/monitors';
 
 const CustomTooltip = ({ active, payload }) => {
   if (active && payload && payload.length) {
