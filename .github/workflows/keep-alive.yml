@@ -10,8 +10,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping Backend Health Endpoint
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL || 'https://uptime-monitor-39c5.onrender.com/api/health' }}
         run: |
-          URL="${{ secrets.BACKEND_URL || 'https://uptime-monitor-39c5.onrender.com/api/health' }}"
-          echo "Pinging: $URL"
-          curl -f --max-time 30 --retry 2 "$URL"
+          set -euo pipefail
+
+          if [[ ! "$BACKEND_URL" =~ ^https://[^[:space:]]+$ ]]; then
+            echo "::error::BACKEND_URL must be a valid HTTPS URL without whitespace. Got: '$BACKEND_URL'"
+            exit 1
+          fi
+
+          echo "Pinging backend health endpoint"
+          curl --fail --silent --show-error \
+            --location \
+            --max-time 30 \
+            --retry 2 \
+            "$BACKEND_URL"
 
