@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const compression = require('compression');
 const { Pool } = require('pg');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -9,9 +10,15 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// Configure PostgreSQL pool
+// Configure PostgreSQL pool with safe limits for Render free tier (max 25 connections)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  max: 5,               // max pool size
+  idleTimeoutMillis: 30000,  // close idle clients after 30s
+  connectionTimeoutMillis: 5000, // fail fast if DB is unreachable
+  ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('render.com')
+    ? { rejectUnauthorized: false }
+    : false,
 });
 
 pool.on('error', (err) => {
@@ -26,12 +33,23 @@ pool.query('SELECT 1').then(() => {
 });
 
 // Middleware
+app.use(compression()); // gzip all responses
 app.use(cors());
 app.use(express.json());
 
-// Serve built React frontend from /app/public (production only)
+// Serve built React frontend with smart cache headers
 const publicDir = path.join(__dirname, 'public');
-app.use(express.static(publicDir));
+// Vite hashes JS/CSS filenames — cache them for 1 year
+app.use(express.static(publicDir, {
+  maxAge: '1y',
+  etag: true,
+  setHeaders: (res, filePath) => {
+    // index.html must never be cached (it references hashed assets)
+    if (filePath.endsWith('index.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
+  },
+}));
 
 // Send Discord Webhook Alert
 async function sendDiscordAlert(url, newStatus, statusCode, errorMsg, isColdStart = false) {
