@@ -10,4 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping Backend Health Endpoint
-        run: curl -f "${{ secrets.BACKEND_URL || 'https://your-uptime-backend.onrender.com/api/health' }}"
+        run: |
+          URL="${{ secrets.BACKEND_URL || 'https://uptime-monitor-39c5.onrender.com/api/health' }}"
+          echo "Pinging: $URL"
+          curl -f --max-time 30 --retry 2 "$URL"
+
