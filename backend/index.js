@@ -143,6 +143,18 @@ cron.schedule('* * * * *', async () => {
   }
 });
 
+// Root route
+app.get('/', (req, res) => {
+  res.status(200).json({
+    name: 'Uptime Monitor API',
+    status: 'running',
+    endpoints: {
+      health: '/api/health',
+      monitors: '/api/monitors',
+    },
+  });
+});
+
 // Health Check Endpoint
 app.get(['/api/health', '/api/Health'], (req, res) => {
   res.status(200).json({ status: 'ok' });
