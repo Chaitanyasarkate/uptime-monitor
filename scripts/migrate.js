@@ -1,6 +1,12 @@
-const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
+
+let Pool;
+try {
+  Pool = require('pg').Pool;
+} catch {
+  Pool = require(path.join(__dirname, '../backend/node_modules/pg')).Pool;
+}
 
 const DATABASE_URL = process.argv[2] || process.env.DATABASE_URL;
 if (!DATABASE_URL) {
