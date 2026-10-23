@@ -10,15 +10,17 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// Configure PostgreSQL pool with safe limits for Render free tier (max 25 connections)
+// Configure PostgreSQL pool with safe limits for cloud / serverless DBs
+const isLocalDb = !process.env.DATABASE_URL ||
+  process.env.DATABASE_URL.includes('localhost') ||
+  process.env.DATABASE_URL.includes('127.0.0.1');
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   max: 5,               // max pool size
   idleTimeoutMillis: 30000,  // close idle clients after 30s
   connectionTimeoutMillis: 5000, // fail fast if DB is unreachable
-  ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('render.com')
-    ? { rejectUnauthorized: false }
-    : false,
+  ssl: isLocalDb ? false : { rejectUnauthorized: false },
 });
 
 pool.on('error', (err) => {
@@ -206,7 +208,10 @@ app.get('/api/monitors', async (req, res) => {
     res.status(200).json(payload);
   } catch (err) {
     console.error('Error fetching monitors:', err);
-    res.status(500).json({ error: 'Internal server error fetching monitors' });
+    res.status(500).json({
+      error: 'Failed to fetch monitors from database',
+      message: err.message,
+    });
   }
 });
 
