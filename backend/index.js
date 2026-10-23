@@ -170,7 +170,17 @@ cron.schedule('* * * * *', async () => {
 
 // Health Check Endpoint
 app.get(['/api/health', '/api/Health'], (req, res) => {
-  res.status(200).json({ status: 'ok' });
+  const dbUrl = process.env.DATABASE_URL || '';
+  let dbHost = 'NOT_SET';
+  if (dbUrl) {
+    try {
+      const u = new URL(dbUrl.replace(/^postgres(ql)?:\/\//, 'http://'));
+      dbHost = u.hostname;
+    } catch {
+      dbHost = 'MALFORMED (' + dbUrl.substring(0, 15) + '...)';
+    }
+  }
+  res.status(200).json({ status: 'ok', dbConfigured: !!dbUrl, dbHost });
 });
 
 // GET /api/monitors - Returns monitors with nested 24h ping logs
@@ -270,7 +280,7 @@ app.post('/api/monitors', async (req, res) => {
       return res.status(400).json({ error: 'Monitor for this URL already exists' });
     }
     console.error('Error creating monitor:', err);
-    res.status(500).json({ error: 'Internal server error creating monitor' });
+    res.status(500).json({ error: err.message || 'Internal server error creating monitor' });
   }
 });
 
