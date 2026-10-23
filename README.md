@@ -208,6 +208,25 @@ on:
 
 ---
 
+## Cloud Deployment (Vercel Multi-Services)
+
+Deploy both the Vite React frontend and Express API as a single project on Vercel using `vercel.json`:
+
+- **`backend` service**: Express REST API mounted under `/api/(.*)`
+- **`frontend` service**: Vite React dashboard mounted under `/(.*)`
+
+### Deploy Steps
+
+1. Commit and push `vercel.json` to GitHub.
+2. In the **Vercel Dashboard** (Settings → General):
+   - **Root Directory**: leave as `./` (repository root, do not set to `backend`)
+   - **Framework Preset**: set to **Other** (Vercel will build both services independently based on `vercel.json`)
+3. Configure **Environment Variables** in Vercel:
+   - `DATABASE_URL`: Connection string for PostgreSQL (Neon, Supabase, or Render)
+   - `DISCORD_WEBHOOK_URL`: *(optional)* Discord webhook URL for incident alerts
+
+---
+
 ## Performance Optimizations & Production Diagnostics
 
 Following production deployment on Render's free tier, several performance bottlenecks were diagnosed and resolved:
