@@ -24,6 +24,8 @@ jobs:
           curl --fail --silent --show-error \
             --location \
             --max-time 30 \
-            --retry 2 \
+            --retry 8 \
+            --retry-delay 10 \
+            --retry-max-time 180 \
+            --retry-all-errors \
             "$BACKEND_URL"
-
