@@ -150,9 +150,8 @@ async function checkMonitor(monitor) {
   }
 }
 
-// Schedule node-cron task running every 60 seconds (* * * * *)
-// Only pings monitors if last_checked IS NULL or elapsed minutes >= interval_minutes
-cron.schedule('* * * * *', async () => {
+// Function to check all due monitors (shared between node-cron and serverless /api/cron)
+async function runDueChecks() {
   try {
     const res = await pool.query(
       `SELECT * FROM monitors
@@ -163,8 +162,34 @@ cron.schedule('* * * * *', async () => {
     if (dueMonitors.length > 0) {
       await Promise.all(dueMonitors.map(checkMonitor));
     }
+    return dueMonitors.length;
   } catch (err) {
     console.error('Error running scheduled health check cron:', err.message || err);
+    throw err;
+  }
+}
+
+// Schedule node-cron task running every 60 seconds (* * * * *)
+// Active on persistent instances (Docker / Render); on Vercel, /api/cron or polling triggers this
+cron.schedule('* * * * *', async () => {
+  try {
+    await runDueChecks();
+  } catch {
+    // Handled in runDueChecks
+  }
+});
+
+// Dedicated Cron Endpoint for Serverless / External schedulers (GitHub Actions, Vercel Cron, cron-job.org)
+app.get(['/api/cron', '/api/cron/check'], async (req, res) => {
+  try {
+    const checkedCount = await runDueChecks();
+    res.status(200).json({
+      status: 'ok',
+      checked: checkedCount,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to run cron health check', message: err.message });
   }
 });
 
@@ -216,6 +241,9 @@ app.get('/api/monitors', async (req, res) => {
     }));
 
     res.status(200).json(payload);
+
+    // Opportunistically check if any monitors are overdue for keep-alive ping
+    runDueChecks().catch(() => {});
   } catch (err) {
     console.error('Error fetching monitors:', err);
     res.status(500).json({

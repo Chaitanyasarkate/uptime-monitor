@@ -75,6 +75,7 @@ export default function App() {
   const [newUrl, setNewUrl] = useState('');
   const [intervalMinutes, setIntervalMinutes] = useState('1');
   const [inputError, setInputError] = useState('');
+  const [dbError, setDbError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [wakingId, setWakingId] = useState(null);
 
@@ -84,12 +85,15 @@ export default function App() {
     try {
       const res = await fetch(API_URL);
       if (!res.ok) {
-        throw new Error(`Failed to fetch monitors (HTTP ${res.status})`);
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || errJson.error || `Failed to fetch monitors (HTTP ${res.status})`);
       }
       const data = await res.json();
       setMonitors(Array.isArray(data) ? data : []);
+      setDbError(null);
     } catch (err) {
       console.error('Error fetching monitors:', err);
+      setDbError(err.message || 'Unable to connect to database');
     } finally {
       setLoading(false);
       if (isManual) setIsRefreshing(false);
@@ -252,6 +256,27 @@ export default function App() {
             </div>
           </div>
         </header>
+
+        {/* Database Connection Alert Banner */}
+        {dbError && (
+          <div className="bg-rose-500/10 border border-rose-500/30 rounded-2xl p-4 sm:p-5 text-rose-300 flex items-start gap-3 shadow-lg backdrop-blur-md">
+            <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+            <div className="space-y-1.5 text-sm flex-1">
+              <div className="flex items-center justify-between">
+                <p className="font-semibold text-rose-200">Database Connection Required</p>
+                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-rose-500/20 text-rose-300 rounded border border-rose-500/30">
+                  PostgreSQL Offline
+                </span>
+              </div>
+              <p className="text-xs text-rose-300 font-mono bg-rose-950/70 p-2.5 rounded-lg border border-rose-800/40 break-all">
+                {dbError}
+              </p>
+              <p className="text-xs text-slate-400 pt-0.5">
+                PulseGuard needs an active PostgreSQL database to store monitors, render interactive Recharts graphs, and run keep-alive pings. Please configure a valid <code className="text-slate-300 bg-slate-800 px-1 py-0.5 rounded">DATABASE_URL</code> in your environment variables.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Top Summary Bar */}
         <section aria-label="Overview Metrics" className="grid grid-cols-1 sm:grid-cols-3 gap-4">
