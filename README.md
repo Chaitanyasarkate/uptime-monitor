@@ -4,7 +4,7 @@ A modern, production-grade full-stack uptime and keep-alive monitoring platform 
 
 ![PulseGuard Uptime Monitor Dashboard](docs/screenshots/dashboard.png)
 
-🌐 **Live Demo**: [https://uptime-monitor-39c5.onrender.com](https://uptime-monitor-39c5.onrender.com)
+🌐 **Live Demo**: [https://uptime-monitor-39c5.onrender.com](https://uptime-monitor-red-xi.vercel.app)
 
 ---
 
